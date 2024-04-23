@@ -29,6 +29,12 @@ def main(args):
     print(f"{len(input_files)} Input files: ", input_files)
     df_all = pd.concat([pd.read_json(input_file, lines=True) for input_file in input_files])
 
+    # 对question_id和model_id组进行分组，找到score最大的行的索引
+    idx = df_all.groupby(['question_id', 'model_id'])['score'].idxmax()
+
+    # 使用得到的索引从原始DataFrame中选取行
+    df_all = df_all.loc[idx]
+
     # create file
     os.makedirs(os.path.dirname(args.save_file), exist_ok=True)
 

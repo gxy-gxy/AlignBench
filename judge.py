@@ -65,6 +65,9 @@ class Config:
         return self.subcategory_type_map.get(category, None)
 
 
+import tiktoken
+encoding = tiktoken.encoding_for_model("gpt-3.5-turbo")
+
 def prompt_construct(sample: Sample, config: Config):
     dimensions = config.category2dimensions(sample.subcategory)
     dim_description = ""
@@ -87,6 +90,9 @@ def prompt_construct(sample: Sample, config: Config):
         "用户的提问： {question}\n" \
         "[参考答案开始]\n{reference}\n[参考答案结束]\n" \
         "[助手的答案开始]\n{answer}\n[助手的答案结束]\n"
+    if len(encoding.encode(sample.answer))>2000:
+        sample.answer  = sample.answer[:700]
+
     prompt = base_prompt.format(category=sample.category, dimensions=dim_description, question=sample.question, reference=sample.reference, answer=sample.answer)
 
     return dimensions, prompt
@@ -125,31 +131,43 @@ def post_process(judgment: str):
 
     return rating, score
 
-
 @retry(wait=wait_random_exponential(min=1, max=20), stop=stop_after_attempt(3))
 def get_GPT_4_judgment(config, messages):
-
+    
     def single_turn_wrapper(text):
         return [{"role": "user", "content": text}]
-
-    url = config.openai_api_url
-    key = config.openai_api_key
-
+        
     if isinstance(messages, str):
         messages = single_turn_wrapper(messages)
-    payload = json.dumps({
-        "model": "gpt-4",
-        "messages": messages,
-        "temperature": 0,
-    })
-    headers = {
-        'Content-Type': 'application/json',
-        'Authorization': f'Bearer {key}'
-    }
 
-    response = requests.request("POST", url, headers=headers, data=payload)
-    print(response.text)
-    output = json.loads(response.text).get("choices")[0].get("message").get("content")
+
+    API_MAX_RETRY=20
+    output = 'error'
+    for _ in range(API_MAX_RETRY):
+        # print(len(encoding.encode(messages[0]['content'])))
+        try:
+            # messages = conv.to_openai_api_messages()
+            response = openai.ChatCompletion.create(
+                deployment_id="gpt4", 
+                model="gpt-4",
+                messages=messages,
+                temperature=0,
+            )
+            # print(response)
+            output = response["choices"][0]["message"]["content"]
+            # print(output)
+            break
+        except openai.error.OpenAIError as e:
+            print(type(e), e)
+            # time.sleep(API_RETRY_SLEEP)
+        except openai.error.InvalidRequestError as e:
+            print(type(e), e)
+            break
+        except KeyError:
+            print(response)
+            break
+        except:
+            pass
     return output
 
 
@@ -181,9 +199,19 @@ def main(args, config:Config):
         for line in f.readlines():
             docs.append(json.loads(line))
         f.close()
-    print(f">>> loaded {len(docs)} docs from {answer_file}")
 
+    print(f">>> loaded {len(docs)} docs from {answer_file}")
+    if os.path.exists(save_file):
+        already_gen_data = [json.loads(line) for line in open(save_file)]
+    else:
+        already_gen_data = []
+
+    print(f"already generate {len(already_gen_data)=}. Remain {len(docs)-len(already_gen_data)}")
+    already_gen = {ele['question_id']: ele for ele in already_gen_data}
     def run_sample_and_save(doc: json, save_file: str):
+        q_id = doc['question_id']
+        if q_id in already_gen and already_gen[q_id]['score']!=-1:
+            return 
         judge = run_sample(doc, config)
         
         doc["dimensions"] = judge.dimensions

@@ -105,7 +105,7 @@ def post_process(judgment: str):
 
         if match:
             dictionary_str = match.group(1)
-            print("matched: ", dictionary_str)
+            # print("matched: ", dictionary_str)
             kv_pattern = r"'(.*?)': (\d+)"
             matches = re.findall(kv_pattern, dictionary_str)
 
@@ -136,12 +136,12 @@ def get_GPT_4_judgment(config, messages):
     
     def single_turn_wrapper(text):
         return [{"role": "user", "content": text}]
-        
+
     if isinstance(messages, str):
         messages = single_turn_wrapper(messages)
 
 
-    API_MAX_RETRY=20
+    API_MAX_RETRY=50
     output = 'error'
     for _ in range(API_MAX_RETRY):
         # print(len(encoding.encode(messages[0]['content'])))
@@ -158,14 +158,16 @@ def get_GPT_4_judgment(config, messages):
             # print(output)
             break
         except openai.error.OpenAIError as e:
+            print(messages[0])
             print(type(e), e)
             # time.sleep(API_RETRY_SLEEP)
         except openai.error.InvalidRequestError as e:
             print(type(e), e)
             break
         except KeyError:
+            print(messages)
             print(response)
-            break
+            # break
         except:
             pass
     return output
@@ -206,8 +208,12 @@ def main(args, config:Config):
     else:
         already_gen_data = []
 
-    print(f"already generate {len(already_gen_data)=}. Remain {len(docs)-len(already_gen_data)}")
-    already_gen = {ele['question_id']: ele for ele in already_gen_data}
+    already_gen = {ele['question_id']: ele for ele in already_gen_data if ele['judgment']!='error'}
+    for line in already_gen_data:
+        if line['judgment']!='error' and line['score']==-1:
+            print(line)
+    
+    print(f"already generate {len(already_gen)=}. Remain {len(docs)-len(already_gen)}")
     def run_sample_and_save(doc: json, save_file: str):
         q_id = doc['question_id']
         if q_id in already_gen and already_gen[q_id]['score']!=-1:

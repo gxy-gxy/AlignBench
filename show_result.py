@@ -27,13 +27,19 @@ def main(args):
     input_files = [os.path.join(input_dir, file) for file in input_files if file.endswith(".jsonl")]
 
     print(f"{len(input_files)} Input files: ", input_files)
-    df_all = pd.concat([pd.read_json(input_file, lines=True) for input_file in input_files])
+    df_all = pd.concat([pd.read_json(input_file, lines=True) for input_file in input_files]).reset_index(drop=True)
 
     # 对question_id和model_id组进行分组，找到score最大的行的索引
     idx = df_all.groupby(['question_id', 'model_id'])['score'].idxmax()
 
     # 使用得到的索引从原始DataFrame中选取行
     df_all = df_all.loc[idx]
+    print(df_all.groupby('model_id').size())
+    fail_case = df_all[df_all['score']==-1]
+    # print(fail_case['score'])
+    print('all case',len(df_all), 'fail case', len(fail_case))
+
+    fail_case.to_excel('test.xlsx', index=False)
 
     # create file
     os.makedirs(os.path.dirname(args.save_file), exist_ok=True)
